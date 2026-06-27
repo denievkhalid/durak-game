@@ -1,0 +1,46 @@
+import type { GameViewDTO } from "@durakjs/engine"
+import { CardView } from "@/entities/card"
+import { cn } from "@/shared/lib"
+import { TABLE_HEIGHT_CLASS, TABLE_WIDTH_CLASS } from "@/shared/config/card-motion"
+
+type TableAreaProps = {
+  table: GameViewDTO["table"]
+  hiddenCardIds: Set<string>
+}
+
+export function TableArea({ table, hiddenCardIds }: TableAreaProps) {
+  return (
+    <div
+      className={cn(
+        TABLE_WIDTH_CLASS,
+        TABLE_HEIGHT_CLASS,
+        "flex shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-emerald-950/60 bg-black/20 px-8 shadow-inner",
+      )}
+    >
+      {table.length === 0 ? (
+        <span className="text-sm font-medium text-emerald-100/70 drop-shadow-sm">Стол пуст</span>
+      ) : (
+        <div className="flex h-full w-full flex-wrap content-center items-center justify-center gap-x-6 gap-y-3 overflow-hidden">
+          {table.map((pair, index) => (
+            <div key={index} className="relative h-[6.5rem] w-[5.75rem] shrink-0">
+              <CardView
+                card={pair.attack}
+                anchor={`table-attack-${pair.attack.id}`}
+                hidden={hiddenCardIds.has(pair.attack.id)}
+                className="origin-center -rotate-6"
+              />
+              {pair.defense && (
+                <CardView
+                  card={pair.defense}
+                  anchor={`table-defense-${pair.defense.id}`}
+                  hidden={hiddenCardIds.has(pair.defense.id)}
+                  className="absolute left-7 top-4 origin-center rotate-6"
+                />
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}

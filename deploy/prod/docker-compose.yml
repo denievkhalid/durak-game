@@ -1,0 +1,42 @@
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - durak
+
+  api:
+    build:
+      context: ../..
+      dockerfile: deploy/prod/Dockerfile.api
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    depends_on:
+      - mongo
+    networks:
+      - durak
+
+  web:
+    build:
+      context: ../..
+      dockerfile: deploy/prod/Dockerfile.web
+      args:
+        VITE_API_URL: /api
+        VITE_SOCKET_URL: ""
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+    networks:
+      - durak
+
+volumes:
+  mongo-data:
+
+networks:
+  durak:
+    driver: bridge

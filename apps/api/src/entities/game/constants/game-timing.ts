@@ -1,0 +1,3 @@
+export const TURN_TIMER_SECONDS = 30
+
+export const TURN_TIMER_MS = TURN_TIMER_SECONDS * 1000
