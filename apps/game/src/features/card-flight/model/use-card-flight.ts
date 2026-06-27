@@ -4,7 +4,6 @@ import {
   MAX_TABLE_PAIRS,
   BOT_PLAYER_ID,
   HUMAN_PLAYER_ID,
-  type GameCommand,
   type GameViewDTO,
 } from "@durakjs/engine"
 import { useGameStore } from "@/features/game-model"
@@ -19,7 +18,6 @@ import {
   getOpponentHandSelector,
   getPlayerHandSelector,
   getTableCardSelector,
-  getTableDropTargetSelector,
   measureElement,
   toRect,
   type Rect,
@@ -62,11 +60,8 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
   const flightQueueRef = useRef<PendingFlight[]>([])
   const botFlightSourceRef = useRef<Rect | null>(null)
   const botFlightCardIdRef = useRef<string | null>(null)
-  const pendingOnlineCommandRef = useRef<GameCommand | null>(null)
 
   const recoverStuckAnimation = useCallback(() => {
-    const pendingOnlineCommand = pendingOnlineCommandRef.current
-    pendingOnlineCommandRef.current = null
     pendingFlightRef.current = null
     flightQueueRef.current = []
     botFlightSourceRef.current = null
@@ -79,11 +74,8 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
       pendingBotPass: null,
       pendingBotTake: null,
     })
-    if (pendingOnlineCommand && gameId) {
-      executeCommand(pendingOnlineCommand, gameId)
-    }
     onFlightComplete()
-  }, [clearPendingDeals, executeCommand, gameId, onFlightComplete])
+  }, [clearPendingDeals, onFlightComplete])
 
   const hiddenCardIds = new Set<string>(queuedHiddenIds)
   if (activeFlight) hiddenCardIds.add(activeFlight.card.id)
@@ -180,9 +172,6 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
         }
       } else if (isTableFlightRole(pending.role)) {
         to = measureElement(getTableCardSelector(pending.cardId, pending.role))
-        if (!to) {
-          to = measureElement(getTableDropTargetSelector())
-        }
       }
 
       if (!to) return false
@@ -280,18 +269,12 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
     setTakeTakerId(null)
     setLandedTakeCards(0)
 
-    const pendingOnlineCommand = pendingOnlineCommandRef.current
-    if (pendingOnlineCommand && gameId) {
-      pendingOnlineCommandRef.current = null
-      executeCommand(pendingOnlineCommand, gameId)
-    }
-
     if (useGameStore.getState().pendingDeals?.length) {
       return
     }
 
     onFlightComplete()
-  }, [activeFlight, executeCommand, gameId, onFlightComplete])
+  }, [activeFlight, onFlightComplete])
 
   useLayoutEffect(() => {
     if (!pendingBotPass) return
@@ -487,13 +470,10 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
     }
   }, [isAnimating, recoverStuckAnimation, view.currentPlayerId, view.phase])
 
-  const queueOnlineCommand = useCallback((command: GameCommand) => {
-    pendingOnlineCommandRef.current = command
-  }, [])
-
   const playCardMove = useCallback(
-    (command: GameCommand, cardId: string, element: HTMLElement, role: TableFlightRole) => {
-      if (isAnimating) return
+    (cardId: string, element: HTMLElement, role: TableFlightRole) => {
+      const move = view.legalMoves.find((entry) => entry.cardId === cardId)
+      if (!move || isAnimating) return
 
       enqueueFlights([
         {
@@ -502,25 +482,14 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
           role,
         },
       ])
-
-      if (gameId) {
-        queueOnlineCommand(command)
-        return
-      }
-
-      executeCommand(command, gameId)
+      executeCommand(move.command, gameId)
     },
-    [isAnimating, enqueueFlights, executeCommand, gameId, queueOnlineCommand],
+    [view.legalMoves, isAnimating, executeCommand, enqueueFlights, gameId],
   )
 
   const handleCardClick = useCallback(
     (cardId: string, element: HTMLElement) => {
-      const isFlightBusy =
-        Boolean(activeFlight) ||
-        Boolean(pendingFlightRef.current) ||
-        flightQueueRef.current.length > 0 ||
-        Boolean(pendingOnlineCommandRef.current)
-      if (isAnimating || isFlightBusy) return
+      if (isAnimating) return
 
       const move = view.legalMoves.find((entry) => entry.cardId === cardId)
       if (!move) return
@@ -572,14 +541,7 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
             role: FLIGHT_ROLE.attack,
           })),
         )
-        const throwInCommand: GameCommand = { type: GAME_COMMAND_TYPE.throwIn, cardIds }
-
-        if (gameId) {
-          queueOnlineCommand(throwInCommand)
-          return
-        }
-
-        executeCommand(throwInCommand, gameId)
+        executeCommand({ type: GAME_COMMAND_TYPE.throwIn, cardIds }, gameId)
         return
       }
 
@@ -587,10 +549,9 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
         move.command.type === GAME_COMMAND_TYPE.defend
           ? FLIGHT_ROLE.defense
           : FLIGHT_ROLE.attack
-      playCardMove(move.command, cardId, element, role)
+      playCardMove(cardId, element, role)
     },
     [
-      activeFlight,
       view.legalMoves,
       view.players,
       view.table.length,
@@ -598,43 +559,27 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
       executeCommand,
       enqueueFlights,
       playCardMove,
-      queueOnlineCommand,
       gameId,
     ],
   )
 
   const handlePass = useCallback(() => {
-    const isFlightBusy =
-      Boolean(activeFlight) ||
-      Boolean(pendingFlightRef.current) ||
-      flightQueueRef.current.length > 0 ||
-      Boolean(pendingOnlineCommandRef.current)
-    if (isAnimating || isFlightBusy) return
+    if (isAnimating) return
 
     const canPass = view.legalMoves.some(
       (move) => move.command.type === GAME_COMMAND_TYPE.pass,
     )
     if (!canPass) return
 
-    const passCommand: GameCommand = { type: GAME_COMMAND_TYPE.pass }
     const flights = buildDiscardFlights(view)
     if (flights.length > 0) {
       enqueueFlights(flights)
-      if (gameId) {
-        queueOnlineCommand(passCommand)
-        return
-      }
     }
-    executeCommand(passCommand, gameId)
-  }, [activeFlight, isAnimating, view, enqueueFlights, executeCommand, gameId, queueOnlineCommand])
+    executeCommand({ type: GAME_COMMAND_TYPE.pass }, gameId)
+  }, [isAnimating, view, enqueueFlights, executeCommand, gameId])
 
   const handleTake = useCallback(() => {
-    const isFlightBusy =
-      Boolean(activeFlight) ||
-      Boolean(pendingFlightRef.current) ||
-      flightQueueRef.current.length > 0 ||
-      Boolean(pendingOnlineCommandRef.current)
-    if (isAnimating || isFlightBusy) return
+    if (isAnimating) return
 
     const canTake = view.legalMoves.some(
       (move) => move.command.type === GAME_COMMAND_TYPE.take,
@@ -645,7 +590,6 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
     const handCount =
       human && Array.isArray(human.hand) ? human.hand.length : 0
     const flights = buildTakeFlights(view, handCount, human?.id ?? HUMAN_PLAYER_ID)
-    const takeCommand: GameCommand = { type: GAME_COMMAND_TYPE.take }
 
     if (flights.length > 0) {
       enqueueFlights(flights, {
@@ -653,13 +597,9 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
         takeHandBase: handCount,
         takerId: human?.id ?? HUMAN_PLAYER_ID,
       })
-      if (gameId) {
-        queueOnlineCommand(takeCommand)
-        return
-      }
     }
-    executeCommand(takeCommand, gameId)
-  }, [activeFlight, isAnimating, view, enqueueFlights, executeCommand, gameId, queueOnlineCommand])
+    executeCommand({ type: GAME_COMMAND_TYPE.take }, gameId)
+  }, [isAnimating, view, enqueueFlights, executeCommand, gameId])
 
   return {
     activeFlight,
