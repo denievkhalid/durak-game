@@ -1,7 +1,7 @@
 import type { GameCommand } from "@durakjs/engine"
 
 import type { GameSocketAck } from "./game-socket.types"
-import { getGameSocket, joinGameSocketRoom } from "./game-socket"
+import { ensureGameSocketRoom, getGameSocket } from "./game-socket"
 
 const COMMAND_ACK_TIMEOUT_MS = 5000
 
@@ -27,7 +27,7 @@ export async function emitGameCommand(
   gameId: string,
   command: GameCommand,
 ): Promise<GameSocketAck> {
-  const joinResult = await joinGameSocketRoom(gameId)
+  const joinResult = await ensureGameSocketRoom(gameId)
   if (!joinResult.ok) {
     return joinResult
   }
@@ -36,7 +36,7 @@ export async function emitGameCommand(
 }
 
 export async function emitGameForfeit(gameId: string): Promise<GameSocketAck> {
-  const joinResult = await joinGameSocketRoom(gameId)
+  const joinResult = await ensureGameSocketRoom(gameId)
   if (!joinResult.ok) {
     return joinResult
   }
@@ -45,7 +45,7 @@ export async function emitGameForfeit(gameId: string): Promise<GameSocketAck> {
 }
 
 export async function emitGameSurrender(gameId: string): Promise<GameSocketAck> {
-  const joinResult = await joinGameSocketRoom(gameId)
+  const joinResult = await ensureGameSocketRoom(gameId)
   if (!joinResult.ok) {
     return joinResult
   }

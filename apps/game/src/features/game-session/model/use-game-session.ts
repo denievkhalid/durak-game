@@ -1,9 +1,6 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 
-import { fetchGameSnapshot, type GameSnapshot } from "@/features/create-game/api/game-api"
 import { useGameStore } from "@/features/game-model"
-import { GAME_STATUS } from "@/shared/config/game-status"
 import { getAccessToken } from "@/shared/lib/auth-token"
 import { showToast } from "@/shared/ui"
 import {
@@ -15,48 +12,101 @@ import {
 import type {
   GameLobbyPayload,
   GameOpponentLeftPayload,
+  GameSessionSnapshot,
   GameUpdatePayload,
 } from "../lib/game-socket.types"
 
 const OPPONENT_LEFT_TOAST_MESSAGE = "Соперник отключился"
 const GAME_SOCKET_JOIN_ERROR = "Не удалось подключиться к игре через socket"
 
+type GameSessionState = {
+  data: GameSessionSnapshot | null
+  isLoading: boolean
+  isError: boolean
+  error: Error | null
+}
+
 export function useGameSession(gameId: string | undefined) {
-  const queryClient = useQueryClient()
+  const hasAccessToken = Boolean(getAccessToken())
   const applyServerView = useGameStore((store) => store.applyServerView)
   const resetSession = useGameStore((store) => store.resetSession)
   const setError = useGameStore((store) => store.setError)
   const clearError = useGameStore((store) => store.clearError)
-
-  const query = useQuery({
-    queryKey: ["game", gameId],
-    queryFn: () => fetchGameSnapshot(gameId!),
-    enabled: Boolean(gameId) && Boolean(getAccessToken()),
-    refetchInterval: (query) =>
-      query.state.data?.status === GAME_STATUS.finished ? false : 1000,
+  const [session, setSession] = useState<GameSessionState>({
+    data: null,
+    isLoading: Boolean(gameId) && hasAccessToken,
+    isError: false,
+    error: null,
   })
 
   useEffect(() => {
-    if (!query.data?.view) {
-      return
+    if (!gameId || !hasAccessToken) {
+      setSession({
+        data: null,
+        isLoading: false,
+        isError: false,
+        error: null,
+      })
     }
-
-    applyServerView(query.data.view)
-  }, [applyServerView, query.data])
+  }, [gameId, hasAccessToken])
 
   useEffect(() => {
-    if (!gameId || !getAccessToken()) {
+    if (!gameId || !hasAccessToken) {
       return
     }
 
     const socket = getGameSocket()
     let isDisposed = false
 
+    const applySnapshot = (snapshot: GameSessionSnapshot) => {
+      if (snapshot.view) {
+        applyServerView(snapshot.view)
+      }
+
+      setSession({
+        data: snapshot,
+        isLoading: false,
+        isError: false,
+        error: null,
+      })
+    }
+
+    const setJoinError = (message: string) => {
+      setError(message)
+      setSession((current) => ({
+        data: current.data,
+        isLoading: false,
+        isError: true,
+        error: new Error(message),
+      }))
+    }
+
     const handleUpdate = (payload: GameUpdatePayload) => {
       if (isDisposed) {
         return
       }
+
       applyServerView(payload.view)
+      setSession((current) => {
+        if (!current.data) {
+          return {
+            data: null,
+            isLoading: false,
+            isError: false,
+            error: null,
+          }
+        }
+
+        return {
+          data: {
+            ...current.data,
+            view: payload.view,
+          },
+          isLoading: false,
+          isError: false,
+          error: null,
+        }
+      })
     }
 
     const handleLobby = (payload: GameLobbyPayload) => {
@@ -68,19 +118,26 @@ export function useGameSession(gameId: string | undefined) {
         return
       }
 
-      queryClient.setQueryData<GameSnapshot>(["game", gameId], (current) => {
-        if (!current) {
-          return current
+      setSession((current) => {
+        const nextData: GameSessionSnapshot = {
+          id: gameId,
+          status: payload.status,
+          participantIds: payload.participantIds,
+          view: current.data?.view ?? null,
+        }
+
+        if (current.data?.joinCode !== undefined) {
+          nextData.joinCode = current.data.joinCode
         }
 
         return {
           ...current,
-          status: payload.status,
-          participantIds: payload.participantIds,
+          data: nextData,
+          isLoading: false,
+          isError: false,
+          error: null,
         }
       })
-
-      void queryClient.invalidateQueries({ queryKey: ["game", gameId] })
     }
 
     const handleOpponentLeft = (payload: GameOpponentLeftPayload) => {
@@ -88,9 +145,7 @@ export function useGameSession(gameId: string | undefined) {
         return
       }
 
-      const currentView =
-        useGameStore.getState().view ??
-        queryClient.getQueryData<GameSnapshot>(["game", gameId])?.view
+      const currentView = useGameStore.getState().view
       const selfPlayerId = currentView?.players.find((player) => Array.isArray(player.hand))?.id
       if (selfPlayerId && payload.userId === selfPlayerId) {
         return
@@ -100,6 +155,13 @@ export function useGameSession(gameId: string | undefined) {
     }
 
     const joinRoom = () => {
+      setSession((current) => ({
+        ...current,
+        isLoading: current.data === null,
+        isError: false,
+        error: null,
+      }))
+
       void joinGameSocketRoom(gameId).then((response) => {
         if (isDisposed) {
           return
@@ -107,7 +169,7 @@ export function useGameSession(gameId: string | undefined) {
 
         if (response.ok) {
           clearError()
-          void queryClient.invalidateQueries({ queryKey: ["game", gameId] })
+          applySnapshot(response.snapshot)
           return
         }
 
@@ -118,7 +180,7 @@ export function useGameSession(gameId: string | undefined) {
           return
         }
 
-        setError(response.error ?? GAME_SOCKET_JOIN_ERROR)
+        setJoinError(response.error ?? GAME_SOCKET_JOIN_ERROR)
       })
     }
 
@@ -142,8 +204,8 @@ export function useGameSession(gameId: string | undefined) {
       disconnectGameSocket()
       resetSession()
     }
-  }, [applyServerView, clearError, gameId, queryClient, resetSession, setError])
+  }, [applyServerView, clearError, gameId, hasAccessToken, resetSession, setError])
 
-  return query
+  return session
 }
 

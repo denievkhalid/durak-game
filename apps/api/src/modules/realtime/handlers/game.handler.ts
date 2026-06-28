@@ -1,6 +1,7 @@
-import type { GameCommand } from "@durakjs/engine"
+import type { GameCommand, GameViewDTO } from "@durakjs/engine"
 import type { Server, Socket } from "socket.io"
 
+import type { GameStatus } from "../../../entities/game"
 import { AppError } from "../../../shared/errors/app-error"
 import type { GameService } from "../../game/service/game.service"
 
@@ -21,7 +22,19 @@ type GameForfeitPayload = {
   gameId: string
 }
 
-type AckResponse =
+type GameJoinSnapshot = {
+  id: string
+  status: GameStatus
+  participantIds: string[]
+  joinCode?: string | null
+  view: GameViewDTO | null
+}
+
+type GameJoinAckResponse =
+  | { ok: true; snapshot: GameJoinSnapshot }
+  | { ok: false; error: string }
+
+type GameActionAckResponse =
   | { ok: true }
   | { ok: false; error: string }
 
@@ -61,14 +74,27 @@ export function registerGameHandlers(io: Server, gameService: GameService): void
   io.on("connection", (socket) => {
     socket.on(
       "game:join",
-      async (payload: GameJoinPayload, ack?: (response: AckResponse) => void) => {
+      async (payload: GameJoinPayload, ack?: (response: GameJoinAckResponse) => void) => {
         try {
           const user = getSocketUser(socket)
 
           await bindPlayerSocket(socket, user.id, payload.gameId, gameService)
-          await gameService.joinGame(payload.gameId, user.id)
+          const joinResult = await gameService.joinGame(payload.gameId, user.id)
+          const snapshot: GameJoinSnapshot = {
+            id: joinResult.id,
+            status: joinResult.status,
+            participantIds: joinResult.participantIds,
+            view: joinResult.view,
+          }
 
-          ack?.({ ok: true })
+          if (joinResult.joinCode !== undefined) {
+            snapshot.joinCode = joinResult.joinCode
+          }
+
+          ack?.({
+            ok: true,
+            snapshot,
+          })
         } catch (error) {
           if (typeof payload?.gameId === "string") {
             await socket.leave(gameService.getRoomName(payload.gameId))
@@ -81,7 +107,7 @@ export function registerGameHandlers(io: Server, gameService: GameService): void
 
     socket.on(
       "game:command",
-      async (payload: GameCommandPayload, ack?: (response: AckResponse) => void) => {
+      async (payload: GameCommandPayload, ack?: (response: GameActionAckResponse) => void) => {
         try {
           getSocketUser(socket)
 
@@ -102,7 +128,7 @@ export function registerGameHandlers(io: Server, gameService: GameService): void
 
     socket.on(
       "game:surrender",
-      async (payload: GameSurrenderPayload, ack?: (response: AckResponse) => void) => {
+      async (payload: GameSurrenderPayload, ack?: (response: GameActionAckResponse) => void) => {
         try {
           getSocketUser(socket)
 
@@ -123,7 +149,7 @@ export function registerGameHandlers(io: Server, gameService: GameService): void
 
     socket.on(
       "game:forfeit",
-      async (payload: GameForfeitPayload, ack?: (response: AckResponse) => void) => {
+      async (payload: GameForfeitPayload, ack?: (response: GameActionAckResponse) => void) => {
         try {
           getSocketUser(socket)
 

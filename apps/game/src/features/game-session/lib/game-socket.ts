@@ -2,9 +2,10 @@ import { io, type Socket } from "socket.io-client"
 
 import { SOCKET_URL } from "@/shared/config/api"
 import { getAccessToken } from "@/shared/lib/auth-token"
-import type { GameSocketAck } from "./game-socket.types"
+import type { GameJoinSocketAck, GameSocketAck } from "./game-socket.types"
 
 let socket: Socket | null = null
+let joinedGameId: string | null = null
 const SOCKET_ACK_TIMEOUT_MS = 5000
 const NO_RESPONSE_ERROR = "No response"
 export const SOCKET_CONNECTION_TIMEOUT_ERROR = "Socket connection timed out"
@@ -17,6 +18,10 @@ export function getGameSocket(): Socket {
       auth: {
         token: getAccessToken() ?? "",
       },
+    })
+
+    socket.on("disconnect", () => {
+      joinedGameId = null
     })
   }
 
@@ -61,12 +66,7 @@ export function connectGameSocket(): Promise<GameSocketAck> {
   })
 }
 
-export async function joinGameSocketRoom(gameId: string): Promise<GameSocketAck> {
-  const connection = await connectGameSocket()
-  if (!connection.ok) {
-    return connection
-  }
-
+function emitJoinGame(gameId: string): Promise<GameJoinSocketAck> {
   const socket = getGameSocket()
 
   return new Promise((resolve) => {
@@ -74,11 +74,48 @@ export async function joinGameSocketRoom(gameId: string): Promise<GameSocketAck>
       resolve({ ok: false, error: GAME_ROOM_JOIN_TIMEOUT_ERROR })
     }, SOCKET_ACK_TIMEOUT_MS)
 
-    socket.emit("game:join", { gameId }, (response: GameSocketAck) => {
+    socket.emit("game:join", { gameId }, (response: GameJoinSocketAck) => {
       clearTimeout(timeoutId)
-      resolve(response ?? { ok: false, error: NO_RESPONSE_ERROR })
+
+      if (!response) {
+        resolve({ ok: false, error: NO_RESPONSE_ERROR })
+        return
+      }
+
+      if (response.ok) {
+        joinedGameId = gameId
+      }
+
+      resolve(response)
     })
   })
+}
+
+export async function joinGameSocketRoom(gameId: string): Promise<GameJoinSocketAck> {
+  const connection = await connectGameSocket()
+  if (!connection.ok) {
+    return connection
+  }
+
+  return emitJoinGame(gameId)
+}
+
+export async function ensureGameSocketRoom(gameId: string): Promise<GameSocketAck> {
+  const connection = await connectGameSocket()
+  if (!connection.ok) {
+    return connection
+  }
+
+  if (joinedGameId === gameId) {
+    return { ok: true }
+  }
+
+  const joinResponse = await emitJoinGame(gameId)
+  if (!joinResponse.ok) {
+    return joinResponse
+  }
+
+  return { ok: true }
 }
 
 export function disconnectGameSocket(): void {
@@ -86,6 +123,7 @@ export function disconnectGameSocket(): void {
     return
   }
 
+  joinedGameId = null
   socket.disconnect()
   socket = null
 }

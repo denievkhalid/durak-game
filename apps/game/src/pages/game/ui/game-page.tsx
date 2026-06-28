@@ -11,8 +11,13 @@ import { getApiErrorMessage } from "@/shared/lib/api-error"
 import { getAccessToken } from "@/shared/lib/auth-token"
 import { useParams } from "react-router-dom"
 
+const GAME_NOT_FOUND_ERROR = "Game not found"
+
 function isNotFoundError(error: unknown): boolean {
-  return isAxiosError(error) && error.response?.status === 404
+  return (
+    (isAxiosError(error) && error.response?.status === 404) ||
+    (error instanceof Error && error.message === GAME_NOT_FOUND_ERROR)
+  )
 }
 
 export function GamePage() {

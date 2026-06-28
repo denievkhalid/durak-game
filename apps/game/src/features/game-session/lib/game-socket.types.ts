@@ -33,7 +33,29 @@ export type GameOpponentLeftPayload = {
   userId: string
 }
 
-export type GameSocketAck = {
-  ok: boolean
-  error?: string
+export type GameSessionSnapshot = {
+  id: string
+  status: GameStatus
+  participantIds: string[]
+  joinCode?: string | null
+  view: GameViewDTO | null
 }
+
+export type GameSocketAck =
+  | {
+      ok: true
+    }
+  | {
+      ok: false
+      error: string
+    }
+
+export type GameJoinSocketAck =
+  | {
+      ok: true
+      snapshot: GameSessionSnapshot
+    }
+  | {
+      ok: false
+      error: string
+    }
