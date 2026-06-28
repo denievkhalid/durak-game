@@ -10,6 +10,31 @@ const SOCKET_ACK_TIMEOUT_MS = 5000
 const NO_RESPONSE_ERROR = "No response"
 export const SOCKET_CONNECTION_TIMEOUT_ERROR = "Socket connection timed out"
 export const GAME_ROOM_JOIN_TIMEOUT_ERROR = "Game room join timed out"
+const SOCKET_LOG_PREFIX_INCOMING = "[socket][incoming]"
+const SOCKET_LOG_PREFIX_OUTGOING = "[socket][outgoing]"
+const SOCKET_LOG_PREFIX_STATUS = "[socket][status]"
+
+function attachSocketDebugLogging(currentSocket: Socket): void {
+  currentSocket.onAny((event, ...args) => {
+    console.log(SOCKET_LOG_PREFIX_INCOMING, event, ...args)
+  })
+
+  currentSocket.onAnyOutgoing((event, ...args) => {
+    console.log(SOCKET_LOG_PREFIX_OUTGOING, event, ...args)
+  })
+
+  currentSocket.on("connect", () => {
+    console.log(SOCKET_LOG_PREFIX_STATUS, "connected", currentSocket.id)
+  })
+
+  currentSocket.on("disconnect", (reason) => {
+    console.log(SOCKET_LOG_PREFIX_STATUS, "disconnected", reason)
+  })
+
+  currentSocket.on("connect_error", (error) => {
+    console.log(SOCKET_LOG_PREFIX_STATUS, "connect_error", error.message)
+  })
+}
 
 export function getGameSocket(): Socket {
   if (!socket) {
@@ -19,6 +44,7 @@ export function getGameSocket(): Socket {
         token: getAccessToken() ?? "",
       },
     })
+    attachSocketDebugLogging(socket)
 
     socket.on("disconnect", () => {
       joinedGameId = null
