@@ -1,4 +1,4 @@
-import { MAX_TABLE_PAIRS, type GameViewDTO } from "@durakjs/engine"
+import type { GameViewDTO } from "@durakjs/engine"
 import { CardView } from "@/entities/card"
 import { cn } from "@/shared/lib"
 import { TABLE_HEIGHT_CLASS, TABLE_WIDTH_CLASS } from "@/shared/config/card-motion"
@@ -9,8 +9,6 @@ type TableAreaProps = {
 }
 
 export function TableArea({ table, hiddenCardIds }: TableAreaProps) {
-  const slotIndexes = Array.from({ length: MAX_TABLE_PAIRS }, (_, index) => index)
-
   return (
     <div
       className={cn(
@@ -24,40 +22,27 @@ export function TableArea({ table, hiddenCardIds }: TableAreaProps) {
         className="pointer-events-none absolute left-1/2 top-1/2 h-[5.5rem] w-[3.75rem] -translate-x-1/2 -translate-y-1/2 opacity-0"
       />
       <div className="flex h-full w-full flex-wrap content-center items-center justify-center gap-x-6 gap-y-3 overflow-hidden">
-        {slotIndexes.map((index) => {
-          const pair = table[index]
-
-          return (
-            <div key={index} className="relative h-[6.5rem] w-[5.75rem] shrink-0">
-              <div
-                data-card-anchor={`table-slot-attack-${index}`}
-                className="pointer-events-none absolute left-0 top-0 h-card w-card opacity-0"
-              />
-              <div
-                data-card-anchor={`table-slot-defense-${index}`}
-                className="pointer-events-none absolute left-7 top-4 h-card w-card opacity-0"
-              />
-              {pair && (
-                <>
-                  <CardView
-                    card={pair.attack}
-                    anchor={`table-attack-${pair.attack.id}`}
-                    hidden={hiddenCardIds.has(pair.attack.id)}
-                    className="absolute left-0 top-0 origin-center -rotate-6"
-                  />
-                  {pair.defense && (
-                    <CardView
-                      card={pair.defense}
-                      anchor={`table-defense-${pair.defense.id}`}
-                      hidden={hiddenCardIds.has(pair.defense.id)}
-                      className="absolute left-7 top-4 origin-center rotate-6"
-                    />
-                  )}
-                </>
+        {table.map((pair, index) => (
+          <div key={index} className="relative h-[6.5rem] w-[5.75rem] shrink-0">
+            <CardView
+              card={pair.attack}
+              anchor={`table-attack-${pair.attack.id}`}
+              hidden={hiddenCardIds.has(pair.attack.id)}
+              className={cn(
+                "absolute top-0 origin-center -rotate-6",
+                pair.defense ? "left-0" : "left-1/2 -translate-x-1/2",
               )}
-            </div>
-          )
-        })}
+            />
+            {pair.defense && (
+              <CardView
+                card={pair.defense}
+                anchor={`table-defense-${pair.defense.id}`}
+                hidden={hiddenCardIds.has(pair.defense.id)}
+                className="absolute left-7 top-4 origin-center rotate-6"
+              />
+            )}
+          </div>
+        ))}
       </div>
       {table.length === 0 && (
         <span className="pointer-events-none absolute text-sm font-medium text-emerald-100/70 drop-shadow-sm">

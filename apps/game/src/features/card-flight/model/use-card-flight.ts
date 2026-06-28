@@ -19,8 +19,6 @@ import {
   getPlayerHandSelector,
   getTableCardSelector,
   getTableDropTargetSelector,
-  getTableSlotAttackSelector,
-  getTableSlotDefenseSelector,
   measureElement,
   toRect,
   type Rect,
@@ -37,6 +35,14 @@ const DEFAULT_FLIGHT_START_MAX_ATTEMPTS = 24
 const BOT_FLIGHT_START_MAX_ATTEMPTS = 24
 const DEALS_START_MAX_ATTEMPTS = 12
 const ANIMATION_STUCK_TIMEOUT_MS = 6000
+const TABLE_ATTACK_STEP_REM = 7.25
+const TABLE_DEFENSE_OFFSET_X_REM = 1.75
+const TABLE_DEFENSE_OFFSET_Y_REM = 1
+const TABLE_MAX_SINGLE_ROW_PAIRS = 5
+
+function remToPx(rem: number): number {
+  return rem * parseFloat(getComputedStyle(document.documentElement).fontSize)
+}
 
 export function useCardFlight(view: GameViewDTO, gameId?: string) {
   const executeCommand = useGameStore((store) => store.executeCommand)
@@ -538,17 +544,33 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
       const move = view.legalMoves.find((entry) => entry.cardId === cardId)
       if (!move || isAnimating) return
       const handCard = viewerHand.find((card) => card.id === cardId)
-      let target: Rect | null = null
+      const target = measureElement(getTableDropTargetSelector()) ?? undefined
+      let resolvedTarget = target
 
-      if (move.command.type === GAME_COMMAND_TYPE.defend) {
-        target = measureElement(getTableSlotDefenseSelector(move.command.pairIndex))
-      } else if (move.command.type === GAME_COMMAND_TYPE.attack) {
-        const targetIndex = Math.min(view.table.length, MAX_TABLE_PAIRS - 1)
-        target = measureElement(getTableSlotAttackSelector(targetIndex))
+      if (target && move.command.type === GAME_COMMAND_TYPE.attack) {
+        if (view.table.length < TABLE_MAX_SINGLE_ROW_PAIRS) {
+          resolvedTarget = {
+            ...target,
+            x: target.x + (view.table.length * remToPx(TABLE_ATTACK_STEP_REM)) / 2,
+          }
+        }
       }
 
-      if (!target) {
-        target = measureElement(getTableDropTargetSelector())
+      if (move.command.type === GAME_COMMAND_TYPE.defend) {
+        const defendedPair = view.table[move.command.pairIndex]
+        if (defendedPair) {
+          const attackRect = measureElement(
+            getTableCardSelector(defendedPair.attack.id, FLIGHT_ROLE.attack),
+          )
+          if (attackRect) {
+            resolvedTarget = {
+              x: attackRect.x + remToPx(TABLE_DEFENSE_OFFSET_X_REM),
+              y: attackRect.y + remToPx(TABLE_DEFENSE_OFFSET_Y_REM),
+              width: attackRect.width,
+              height: attackRect.height,
+            }
+          }
+        }
       }
 
       enqueueFlights([
@@ -556,13 +578,13 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
           cardId,
           card: handCard,
           from: toRect(element.getBoundingClientRect()),
-          target: target ?? undefined,
+          target: resolvedTarget,
           role,
         },
       ])
       executeCommand(move.command, gameId)
     },
-    [view.legalMoves, view.table.length, isAnimating, executeCommand, enqueueFlights, gameId, viewerHand],
+    [view.legalMoves, view.table, isAnimating, executeCommand, enqueueFlights, gameId, viewerHand],
   )
 
   const handleCardClick = useCallback(
@@ -609,14 +631,21 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
         const cardIds = groupedCardIds.length > 0 ? groupedCardIds : [cardId]
         const clickedCardRect = toRect(element.getBoundingClientRect())
         const cardsById = new Map(viewerHand.map((card) => [card.id, card]))
+        const baseTarget = measureElement(getTableDropTargetSelector()) ?? undefined
 
         enqueueFlights(
-          cardIds.map((id, offset) => {
-            const targetIndex = Math.min(view.table.length + offset, MAX_TABLE_PAIRS - 1)
-            const target =
-              measureElement(getTableSlotAttackSelector(targetIndex)) ??
-              measureElement(getTableDropTargetSelector()) ??
-              undefined
+          cardIds.map((id, index) => {
+            let target = baseTarget
+
+            if (baseTarget) {
+              const targetPairIndex = view.table.length + index
+              if (targetPairIndex < TABLE_MAX_SINGLE_ROW_PAIRS) {
+                target = {
+                  ...baseTarget,
+                  x: baseTarget.x + (targetPairIndex * remToPx(TABLE_ATTACK_STEP_REM)) / 2,
+                }
+              }
+            }
 
             return {
               cardId: id,
