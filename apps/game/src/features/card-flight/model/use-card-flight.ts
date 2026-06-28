@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import {
   GAME_COMMAND_TYPE,
   MAX_TABLE_PAIRS,
@@ -27,7 +27,7 @@ import type { CardFlight } from "../ui/types"
 import { FLIGHT_ENQUEUE, FLIGHT_ROLE, isDealFlightRole, isDiscardFlightRole, isTableFlightRole, isTakeFlightRole, type TableFlightRole } from "../lib/constants"
 import { buildDiscardFlights } from "../lib/discard-flight"
 import { buildTakeFlights } from "../lib/take-flight"
-import { findCardInView, getTableRoleForCard, isHumanPlayer } from "../lib/game-view-helpers"
+import { findCardInView, getTableRoleForCard } from "../lib/game-view-helpers"
 import type { PendingFlight } from "../lib/pending-flight"
 
 const TABLE_FLIGHT_START_MAX_ATTEMPTS = 90
@@ -87,7 +87,20 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
     }
   }
 
-  const opponent = view.players.find((player) => player.id !== HUMAN_PLAYER_ID)
+  const viewer = useMemo(
+    () => view.players.find((player) => Array.isArray(player.hand)),
+    [view.players],
+  )
+  const viewerPlayerId = viewer?.id ?? HUMAN_PLAYER_ID
+  const viewerHand = useMemo(
+    () => (viewer && Array.isArray(viewer.hand) ? viewer.hand : []),
+    [viewer],
+  )
+  const opponent = view.players.find((player) => player.id !== viewerPlayerId)
+  const isViewerPlayer = useCallback(
+    (playerId: string | undefined): boolean => Boolean(playerId && playerId === viewerPlayerId),
+    [viewerPlayerId],
+  )
   const opponentHandCount =
     opponent && "count" in opponent.hand
       ? opponent.hand.count
@@ -109,8 +122,8 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
         const deckFrom = measureElement(getDeckPileSelector())
         if (deckFrom) from = deckFrom
 
-        if (isHumanPlayer(pending.playerId ?? "")) {
-          const human = view.players.find((player) => player.id === HUMAN_PLAYER_ID)
+        if (isViewerPlayer(pending.playerId)) {
+          const human = view.players.find((player) => player.id === viewerPlayerId)
           const handContainer = measureElement(getPlayerHandSelector())
           to = measureElement(getHandCardSelector(pending.cardId))
           if (!to && human && Array.isArray(human.hand) && handContainer) {
@@ -139,8 +152,8 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
       } else if (isDiscardFlightRole(pending.role)) {
         to = measureElement(getDiscardPileSelector())
       } else if (isTakeFlightRole(pending.role)) {
-        if (isHumanPlayer(pending.playerId ?? "")) {
-          const human = view.players.find((player) => player.id === HUMAN_PLAYER_ID)
+        if (isViewerPlayer(pending.playerId)) {
+          const human = view.players.find((player) => player.id === viewerPlayerId)
           const handContainer = measureElement(getPlayerHandSelector())
           if (pending.cardId) {
             to = measureElement(getHandCardSelector(pending.cardId))
@@ -199,7 +212,7 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
       })
       return true
     },
-    [view, opponentHandCount, revealedOpponentCards],
+    [view, opponentHandCount, revealedOpponentCards, isViewerPlayer, viewerPlayerId],
   )
 
   const enqueueFlights = useCallback(
@@ -220,7 +233,7 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
         (flight) =>
           isDealFlightRole(flight.role) &&
           flight.playerId &&
-          !isHumanPlayer(flight.playerId),
+          !isViewerPlayer(flight.playerId),
       ).length
       setRevealedOpponentCards(Math.max(0, opponentHandCount - botDealCount))
     }
@@ -237,7 +250,7 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
     flightQueueRef.current = rest
     setQueuedHiddenIds(flights.map((flight) => flight.cardId))
   },
-  [opponentHandCount],
+  [opponentHandCount, isViewerPlayer],
 )
 
   const handleFlightComplete = useCallback(() => {
@@ -248,7 +261,7 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
       completedFlight &&
       isDealFlightRole(completedFlight.role) &&
       completedFlight.playerId &&
-      !isHumanPlayer(completedFlight.playerId)
+      !isViewerPlayer(completedFlight.playerId)
     ) {
       setRevealedOpponentCards((count) => count + 1)
     }
@@ -278,7 +291,7 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
     }
 
     onFlightComplete()
-  }, [activeFlight, onFlightComplete])
+  }, [activeFlight, isViewerPlayer, onFlightComplete])
 
   useLayoutEffect(() => {
     if (!pendingBotPass) return
@@ -356,7 +369,7 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
         playerId: deal.playerId,
         from: deckFrom,
         role: FLIGHT_ROLE.deal,
-        faceDown: !isHumanPlayer(deal.playerId),
+        faceDown: !isViewerPlayer(deal.playerId),
       }))
 
       clearPendingDeals()
@@ -367,7 +380,7 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
     return () => {
       cancelled = true
     }
-  }, [pendingDeals, activeFlight, clearPendingDeals, enqueueFlights, recoverStuckAnimation])
+  }, [pendingDeals, activeFlight, clearPendingDeals, enqueueFlights, isViewerPlayer, recoverStuckAnimation])
 
   useLayoutEffect(() => {
     if (activeFlight || !pendingFlightRef.current) return
@@ -478,17 +491,19 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
     (cardId: string, element: HTMLElement, role: TableFlightRole) => {
       const move = view.legalMoves.find((entry) => entry.cardId === cardId)
       if (!move || isAnimating) return
+      const handCard = viewerHand.find((card) => card.id === cardId)
 
       enqueueFlights([
         {
           cardId,
+          card: handCard,
           from: toRect(element.getBoundingClientRect()),
           role,
         },
       ])
       executeCommand(move.command, gameId)
     },
-    [view.legalMoves, isAnimating, executeCommand, enqueueFlights, gameId],
+    [view.legalMoves, isAnimating, executeCommand, enqueueFlights, gameId, viewerHand],
   )
 
   const handleCardClick = useCallback(
@@ -534,10 +549,12 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
             : [cardId]
         const cardIds = groupedCardIds.length > 0 ? groupedCardIds : [cardId]
         const clickedCardRect = toRect(element.getBoundingClientRect())
+        const cardsById = new Map(viewerHand.map((card) => [card.id, card]))
 
         enqueueFlights(
           cardIds.map((id) => ({
             cardId: id,
+            card: cardsById.get(id),
             from:
               id === cardId
                 ? clickedCardRect
@@ -564,6 +581,7 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
       enqueueFlights,
       playCardMove,
       gameId,
+      viewerHand,
     ],
   )
 

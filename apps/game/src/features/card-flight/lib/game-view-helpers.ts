@@ -6,7 +6,9 @@ export function isHumanPlayer(playerId: string): boolean {
 }
 
 export function isHumanThrowInPhase(view: GameViewDTO): boolean {
-  return view.phase === GAME_PHASE.throwIn && view.currentPlayerId === HUMAN_PLAYER_ID
+  const viewer = view.players.find((player) => Array.isArray(player.hand))
+  const viewerId = viewer?.id ?? HUMAN_PLAYER_ID
+  return view.phase === GAME_PHASE.throwIn && view.currentPlayerId === viewerId
 }
 
 export function findCardInView(view: GameViewDTO, cardId: string): CardDTO | null {
@@ -15,9 +17,9 @@ export function findCardInView(view: GameViewDTO, cardId: string): CardDTO | nul
     if (pair.defense?.id === cardId) return pair.defense
   }
 
-  const human = view.players.find((player) => player.id === HUMAN_PLAYER_ID)
-  if (human && Array.isArray(human.hand)) {
-    return human.hand.find((card) => card.id === cardId) ?? null
+  const viewer = view.players.find((player) => Array.isArray(player.hand))
+  if (viewer && Array.isArray(viewer.hand)) {
+    return viewer.hand.find((card) => card.id === cardId) ?? null
   }
 
   return null
