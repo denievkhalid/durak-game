@@ -55,6 +55,7 @@ type GameStore = {
   view: GameViewDTO | null
   error: string | null
   isAnimating: boolean
+  socketUpdateVersion: number
   pendingOnlineView: GameViewDTO | null
   pendingBotMove: PendingBotMove | null
   pendingBotPass: PendingBotPass | null
@@ -73,6 +74,7 @@ type GameStore = {
   clearError: () => void
   setError: (error: string) => void
   applyServerView: (view: GameViewDTO) => void
+  applySocketView: (view: GameViewDTO) => void
   resetSession: () => void
 }
 
@@ -227,6 +229,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   view: null,
   error: null,
   isAnimating: false,
+  socketUpdateVersion: 0,
   pendingOnlineView: null,
   pendingBotMove: null,
   pendingBotPass: null,
@@ -269,6 +272,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       state: result.state,
       view: result.view,
       error: null,
+      socketUpdateVersion: 0,
       pendingOnlineView: null,
       pendingBotMove: null,
       pendingDeals,
@@ -542,6 +546,22 @@ export const useGameStore = create<GameStore>((set, get) => ({
     })
   },
 
+  applySocketView: (view: GameViewDTO) => {
+    clearBotChainTimer()
+    applyServerTurnTimer()
+    set((current) => ({
+      view,
+      error: null,
+      isAnimating: false,
+      socketUpdateVersion: current.socketUpdateVersion + 1,
+      pendingOnlineView: null,
+      pendingBotMove: null,
+      pendingBotPass: null,
+      pendingBotTake: null,
+      pendingDeals: null,
+    }))
+  },
+
   resetSession: () => {
     clearBotChainTimer()
     clearAllPlayerActions()
@@ -551,6 +571,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       view: null,
       error: null,
       isAnimating: false,
+      socketUpdateVersion: 0,
       pendingOnlineView: null,
       pendingBotMove: null,
       pendingBotPass: null,

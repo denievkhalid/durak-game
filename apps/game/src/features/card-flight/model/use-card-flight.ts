@@ -47,6 +47,7 @@ function remToPx(rem: number): number {
 export function useCardFlight(view: GameViewDTO, gameId?: string) {
   const executeCommand = useGameStore((store) => store.executeCommand)
   const isAnimating = useGameStore((store) => store.isAnimating)
+  const socketUpdateVersion = useGameStore((store) => store.socketUpdateVersion)
   const pendingDeals = useGameStore((store) => store.pendingDeals)
   const pendingBotPass = useGameStore((store) => store.pendingBotPass)
   const pendingBotTake = useGameStore((store) => store.pendingBotTake)
@@ -69,6 +70,8 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
   const pendingFlightRef = useRef<PendingFlight | null>(null)
   const flightQueueRef = useRef<PendingFlight[]>([])
   const activeFlightRef = useRef<CardFlight | null>(null)
+  const prevViewRef = useRef<GameViewDTO | null>(view)
+  const prevSocketUpdateVersionRef = useRef(socketUpdateVersion)
   const botFlightSourceRef = useRef<Rect | null>(null)
   const botFlightCardIdRef = useRef<string | null>(null)
 
@@ -345,6 +348,67 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
 
     onFlightComplete()
   }, [activeFlight, isViewerPlayer, onFlightComplete])
+
+  useLayoutEffect(() => {
+    const prevView = prevViewRef.current
+    const prevVersion = prevSocketUpdateVersionRef.current
+    prevViewRef.current = view
+    prevSocketUpdateVersionRef.current = socketUpdateVersion
+
+    if (socketUpdateVersion === prevVersion || !prevView) {
+      return
+    }
+
+    if (activeFlight || pendingFlightRef.current || flightQueueRef.current.length > 0) {
+      return
+    }
+
+    const from = measureElement(getOpponentHandSelector())
+    if (!from) {
+      return
+    }
+
+    const previousTableCardIds = new Set<string>()
+    for (const pair of prevView.table) {
+      previousTableCardIds.add(pair.attack.id)
+      if (pair.defense) {
+        previousTableCardIds.add(pair.defense.id)
+      }
+    }
+
+    const incomingFlights: PendingFlight[] = []
+    for (const pair of view.table) {
+      if (!previousTableCardIds.has(pair.attack.id)) {
+        incomingFlights.push({
+          cardId: pair.attack.id,
+          card: pair.attack,
+          from,
+          target:
+            measureElement(getTableCardSelector(pair.attack.id, FLIGHT_ROLE.attack)) ??
+            measureElement(getTableDropTargetSelector()) ??
+            from,
+          role: FLIGHT_ROLE.attack,
+        })
+      }
+
+      if (pair.defense && !previousTableCardIds.has(pair.defense.id)) {
+        incomingFlights.push({
+          cardId: pair.defense.id,
+          card: pair.defense,
+          from,
+          target:
+            measureElement(getTableCardSelector(pair.defense.id, FLIGHT_ROLE.defense)) ??
+            measureElement(getTableDropTargetSelector()) ??
+            from,
+          role: FLIGHT_ROLE.defense,
+        })
+      }
+    }
+
+    if (incomingFlights.length > 0) {
+      enqueueFlights(incomingFlights)
+    }
+  }, [socketUpdateVersion, view, activeFlight, enqueueFlights])
 
   useEffect(() => {
     if (!landedTableFlights.length) {

@@ -29,6 +29,7 @@ type GameSessionState = {
 export function useGameSession(gameId: string | undefined) {
   const hasAccessToken = Boolean(getAccessToken())
   const applyServerView = useGameStore((store) => store.applyServerView)
+  const applySocketView = useGameStore((store) => store.applySocketView)
   const resetSession = useGameStore((store) => store.resetSession)
   const setError = useGameStore((store) => store.setError)
   const clearError = useGameStore((store) => store.clearError)
@@ -86,7 +87,7 @@ export function useGameSession(gameId: string | undefined) {
         return
       }
 
-      applyServerView(payload.view)
+      applySocketView(payload.view)
       setSession((current) => {
         if (!current.data) {
           return {
@@ -204,7 +205,7 @@ export function useGameSession(gameId: string | undefined) {
       disconnectGameSocket()
       resetSession()
     }
-  }, [applyServerView, clearError, gameId, hasAccessToken, resetSession, setError])
+  }, [applyServerView, applySocketView, clearError, gameId, hasAccessToken, resetSession, setError])
 
   return session
 }
