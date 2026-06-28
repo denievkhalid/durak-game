@@ -1,4 +1,6 @@
 import {
+  GAME_COMMAND_TYPE,
+  GAME_PHASE,
   HAND_SIZE,
   HUMAN_PLAYER_ID,
   type Card,
@@ -15,6 +17,8 @@ import type { EngineContainer } from "../core/container"
 import { fail } from "../core/errors/game-error"
 import { toCardDTO } from "../core/factories/card-factory"
 import { toGameViewDTO } from "../core/mappers/game-view-mapper"
+
+const AUTO_PASS_DEFENDED_PAIR_COUNT = 4
 
 export function startGameWorkflow(
   input: CreateGameDTO,
@@ -60,7 +64,7 @@ export function startGameWorkflow(
     trump,
     discard: [],
     table: [],
-    phase: "attack",
+    phase: GAME_PHASE.attack,
     attackerIndex,
     defenderIndex,
     currentPlayerId: attacker.id,
@@ -86,7 +90,7 @@ export function executeCommandWorkflow(
   container: EngineContainer,
   viewerId: string = HUMAN_PLAYER_ID,
 ): WorkflowResult<GameState, GameViewDTO> {
-  if (state.phase === "finished") {
+  if (state.phase === GAME_PHASE.finished) {
     return fail("GAME_FINISHED", "Game is already finished")
   }
 
@@ -95,9 +99,9 @@ export function executeCommandWorkflow(
   }
 
   switch (command.type) {
-    case "attack":
+    case GAME_COMMAND_TYPE.attack:
       return applyAttack(state, command.cardId, playerId, container, viewerId)
-    case "defend":
+    case GAME_COMMAND_TYPE.defend:
       return applyDefend(
         state,
         command.cardId,
@@ -106,11 +110,11 @@ export function executeCommandWorkflow(
         container,
         viewerId,
       )
-    case "throw_in":
+    case GAME_COMMAND_TYPE.throwIn:
       return applyThrowIn(state, command.cardIds, playerId, container, viewerId)
-    case "take":
+    case GAME_COMMAND_TYPE.take:
       return applyTake(state, playerId, container, viewerId)
-    case "pass":
+    case GAME_COMMAND_TYPE.pass:
       return applyPass(state, playerId, container, viewerId)
   }
 }
@@ -122,7 +126,7 @@ function applyAttack(
   container: EngineContainer,
   viewerId: string,
 ): WorkflowResult<GameState, GameViewDTO> {
-  if (state.phase !== "attack") {
+  if (state.phase !== GAME_PHASE.attack) {
     return fail("INVALID_PHASE", "Can only attack during attack phase")
   }
 
@@ -140,7 +144,7 @@ function applyAttack(
   nextState = {
     ...nextState,
     table: container.table.addAttack(nextState.table, removed.card),
-    phase: "defend",
+    phase: GAME_PHASE.defend,
     currentPlayerId: container.turn.getDefender(nextState).id,
   }
 
@@ -159,7 +163,7 @@ function applyThrowIn(
   container: EngineContainer,
   viewerId: string,
 ): WorkflowResult<GameState, GameViewDTO> {
-  if (state.phase !== "throw_in") {
+  if (state.phase !== GAME_PHASE.throwIn) {
     return fail("INVALID_PHASE", "Can only throw in during throw_in phase")
   }
 
@@ -208,7 +212,7 @@ function applyThrowIn(
   nextState = {
     ...nextState,
     table,
-    phase: "defend",
+    phase: GAME_PHASE.defend,
     currentPlayerId: container.turn.getDefender(nextState).id,
   }
 
@@ -224,7 +228,7 @@ function applyDefend(
   container: EngineContainer,
   viewerId: string,
 ): WorkflowResult<GameState, GameViewDTO> {
-  if (state.phase !== "defend") {
+  if (state.phase !== GAME_PHASE.defend) {
     return fail("INVALID_PHASE", "Can only defend during defend phase")
   }
 
@@ -258,10 +262,15 @@ function applyDefend(
   ]
 
   if (container.table.allDefended(nextState.table)) {
+    const attacker = container.turn.getAttacker(nextState)
     nextState = {
       ...nextState,
-      phase: "throw_in",
-      currentPlayerId: container.turn.getAttacker(nextState).id,
+      phase: GAME_PHASE.throwIn,
+      currentPlayerId: attacker.id,
+    }
+
+    if (shouldAutoPassDefendedRound(nextState.table)) {
+      return finalizePassedRound(nextState, attacker.id, container, viewerId, events)
     }
   }
 
@@ -275,7 +284,7 @@ function applyTake(
   container: EngineContainer,
   viewerId: string,
 ): WorkflowResult<GameState, GameViewDTO> {
-  if (state.phase !== "defend") {
+  if (state.phase !== GAME_PHASE.defend) {
     return fail("INVALID_PHASE", "Can only take during defend phase")
   }
 
@@ -291,7 +300,7 @@ function applyTake(
   nextState = {
     ...nextState,
     table: [],
-    phase: "attack",
+    phase: GAME_PHASE.attack,
     currentPlayerId: container.turn.getAttacker(nextState).id,
   }
 
@@ -325,7 +334,7 @@ function applyPass(
   container: EngineContainer,
   viewerId: string,
 ): WorkflowResult<GameState, GameViewDTO> {
-  if (state.phase !== "throw_in") {
+  if (state.phase !== GAME_PHASE.throwIn) {
     return fail("INVALID_PHASE", "Can only pass during throw_in phase")
   }
 
@@ -338,6 +347,16 @@ function applyPass(
     return fail("ILLEGAL_MOVE", "All pairs must be defended before passing")
   }
 
+  return finalizePassedRound(state, attacker.id, container, viewerId)
+}
+
+function finalizePassedRound(
+  state: GameState,
+  attackerId: string,
+  container: EngineContainer,
+  viewerId: string,
+  initialEvents: DomainEvent[] = [],
+): WorkflowResult<GameState, GameViewDTO> {
   const tableCards = container.table.collectCards(state.table)
   const newDefenderIndex = state.defenderIndex
   const newAttackerIndex = state.attackerIndex
@@ -348,12 +367,13 @@ function applyPass(
     discard: [...state.discard, ...tableCards],
     attackerIndex: newDefenderIndex,
     defenderIndex: newAttackerIndex,
-    phase: "attack",
+    phase: GAME_PHASE.attack,
     currentPlayerId: state.players[newDefenderIndex]!.id,
   }
 
   const events: DomainEvent[] = [
-    { type: "round.passed", payload: { attackerId: attacker.id } },
+    ...initialEvents,
+    { type: "round.passed", payload: { attackerId } },
   ]
 
   const { state: refilledState, deals } = refillHands(nextState, container)
@@ -374,6 +394,26 @@ function applyPass(
   nextState = checkGameEnd(nextState)
 
   return buildResult(nextState, container, viewerId, events)
+}
+
+function shouldAutoPassDefendedRound(table: GameState["table"]): boolean {
+  if (table.length !== AUTO_PASS_DEFENDED_PAIR_COUNT) {
+    return false
+  }
+
+  const attackRanks = new Set<Card["rank"]>()
+  const defenseRanks = new Set<Card["rank"]>()
+
+  for (const pair of table) {
+    if (!pair.defense) {
+      return false
+    }
+
+    attackRanks.add(pair.attack.rank)
+    defenseRanks.add(pair.defense.rank)
+  }
+
+  return attackRanks.size === 1 && defenseRanks.size === 1
 }
 
 function refillHands(
@@ -418,7 +458,7 @@ function checkGameEnd(state: GameState): GameState {
 
   return {
     ...state,
-    phase: "finished",
+    phase: GAME_PHASE.finished,
     winnerId: winner.id,
     loserId: loser.id,
     currentPlayerId: winner.id,
@@ -435,7 +475,7 @@ function buildResult(
   const view = toGameViewDTO(state, viewerId, legalMoves)
 
   const finalEvents = [...events]
-  if (state.phase === "finished" && state.winnerId && state.loserId) {
+  if (state.phase === GAME_PHASE.finished && state.winnerId && state.loserId) {
     finalEvents.push({
       type: "game.ended",
       payload: { winnerId: state.winnerId, loserId: state.loserId },
@@ -446,20 +486,20 @@ function buildResult(
 }
 
 export function getLegalMoves(state: GameState, container: EngineContainer): LegalMoveDTO[] {
-  if (state.phase === "finished") return []
+  if (state.phase === GAME_PHASE.finished) return []
 
   const moves: LegalMoveDTO[] = []
   const currentPlayer = container.turn.getPlayerById(state, state.currentPlayerId)
   if (!currentPlayer) return moves
 
-  if (state.phase === "attack") {
+  if (state.phase === GAME_PHASE.attack) {
     for (const card of currentPlayer.hand) {
       moves.push({ command: { type: "attack", cardId: card.id }, cardId: card.id })
     }
     return moves
   }
 
-  if (state.phase === "defend") {
+  if (state.phase === GAME_PHASE.defend) {
     moves.push({ command: { type: "take" } })
 
     const pairIndex = container.table.getUndefendedPairIndex(state.table)
@@ -481,7 +521,7 @@ export function getLegalMoves(state: GameState, container: EngineContainer): Leg
     return moves
   }
 
-  if (state.phase === "throw_in") {
+  if (state.phase === GAME_PHASE.throwIn) {
     moves.push({ command: { type: "pass" } })
 
     if (!container.rules.canAddToTable(state)) {
@@ -503,13 +543,13 @@ export function getLegalMoves(state: GameState, container: EngineContainer): Leg
 
 export function getCardIdsFromCommand(command: GameCommand): string[] {
   switch (command.type) {
-    case "attack":
-    case "defend":
+    case GAME_COMMAND_TYPE.attack:
+    case GAME_COMMAND_TYPE.defend:
       return [command.cardId]
-    case "throw_in":
+    case GAME_COMMAND_TYPE.throwIn:
       return command.cardIds
-    case "take":
-    case "pass":
+    case GAME_COMMAND_TYPE.take:
+    case GAME_COMMAND_TYPE.pass:
       return []
   }
 }
@@ -523,7 +563,7 @@ export function peekBotCommand(
   container: EngineContainer,
 ): GameCommand | null {
   const currentPlayer = container.turn.getPlayerById(state, state.currentPlayerId)
-  if (!currentPlayer?.isBot || state.phase === "finished") return null
+  if (!currentPlayer?.isBot || state.phase === GAME_PHASE.finished) return null
   return container.bot.pickCommand(state, container)
 }
 
@@ -533,7 +573,7 @@ export function runBotTurnIfNeeded(
   viewerId: string = HUMAN_PLAYER_ID,
 ): WorkflowResult<GameState, GameViewDTO> | null {
   const currentPlayer = container.turn.getPlayerById(state, state.currentPlayerId)
-  if (!currentPlayer?.isBot || state.phase === "finished") return null
+  if (!currentPlayer?.isBot || state.phase === GAME_PHASE.finished) return null
 
   const command = container.bot.pickCommand(state, container)
   if (!command) return null
@@ -550,7 +590,7 @@ export function forfeitGameWorkflow(
   container: EngineContainer,
   viewerId: string = HUMAN_PLAYER_ID,
 ): WorkflowResult<GameState, GameViewDTO> {
-  if (state.phase === "finished") {
+  if (state.phase === GAME_PHASE.finished) {
     return fail("GAME_FINISHED", "Game is already finished")
   }
 
@@ -570,7 +610,7 @@ export function forfeitGameWorkflow(
 
   const nextState: GameState = {
     ...state,
-    phase: "finished",
+    phase: GAME_PHASE.finished,
     winnerId: winner.id,
     loserId: forfeitingPlayerId,
     currentPlayerId: winner.id,
@@ -585,7 +625,7 @@ export function surrenderGameWorkflow(
   container: EngineContainer,
   viewerId: string = HUMAN_PLAYER_ID,
 ): WorkflowResult<GameState, GameViewDTO> {
-  if (state.phase === "finished") {
+  if (state.phase === GAME_PHASE.finished) {
     return fail("GAME_FINISHED", "Game is already finished")
   }
 
@@ -601,7 +641,7 @@ export function surrenderGameWorkflow(
 
   const nextState: GameState = {
     ...state,
-    phase: "finished",
+    phase: GAME_PHASE.finished,
     winnerId: winner.id,
     loserId: surrenderingPlayerId,
     currentPlayerId: winner.id,

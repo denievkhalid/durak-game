@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { createEngineContainer } from "../core/container"
-import { HUMAN_PLAYER_ID } from "../core/types"
+import { BOT_PLAYER_ID, HUMAN_PLAYER_ID, type Card, type GameState } from "../core/types"
 import {
   executeCommandWorkflow,
   forfeitGameWorkflow,
@@ -139,5 +139,155 @@ describe("executeCommandWorkflow", () => {
     expect(result.state.phase).toBe("finished")
     expect(result.state.loserId).toBe(start.state.currentPlayerId)
     expect(result.state.winnerId).not.toBe(start.state.currentPlayerId)
+  })
+
+  it("auto passes round when four same-rank attacks are defended by four same-rank cards", () => {
+    const card = (id: string, suit: Card["suit"], rank: Card["rank"]): Card => ({ id, suit, rank })
+
+    const state: GameState = {
+      players: [
+        {
+          id: HUMAN_PLAYER_ID,
+          name: "Human",
+          isBot: false,
+          hand: [card("h1", "spades", "ace"), card("h2", "hearts", "king")],
+        },
+        {
+          id: BOT_PLAYER_ID,
+          name: "Bot",
+          isBot: true,
+          hand: [card("def-final", "spades", "7"), card("def-spare", "hearts", "8")],
+        },
+      ],
+      deck: [
+        card("deck1", "spades", "6"),
+        card("deck2", "spades", "7"),
+        card("deck3", "spades", "8"),
+        card("deck4", "spades", "9"),
+        card("deck5", "spades", "10"),
+        card("deck6", "spades", "jack"),
+        card("deck7", "spades", "queen"),
+        card("deck8", "spades", "king"),
+        card("deck9", "diamonds", "ace"),
+        card("deck10", "hearts", "ace"),
+      ],
+      trump: card("trump", "spades", "ace"),
+      discard: [],
+      table: [
+        {
+          attack: card("a1", "hearts", "6"),
+          defense: card("d1", "hearts", "7"),
+        },
+        {
+          attack: card("a2", "diamonds", "6"),
+          defense: card("d2", "diamonds", "7"),
+        },
+        {
+          attack: card("a3", "clubs", "6"),
+          defense: card("d3", "clubs", "7"),
+        },
+        {
+          attack: card("a4", "clubs", "6"),
+          defense: null,
+        },
+      ],
+      phase: "defend",
+      attackerIndex: 0,
+      defenderIndex: 1,
+      currentPlayerId: BOT_PLAYER_ID,
+      winnerId: null,
+      loserId: null,
+    }
+
+    const result = executeCommandWorkflow(
+      state,
+      { type: "defend", cardId: "def-final", pairIndex: 3 },
+      BOT_PLAYER_ID,
+      container,
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.state.phase).toBe("attack")
+    expect(result.state.table).toHaveLength(0)
+    expect(result.state.discard).toHaveLength(8)
+    expect(result.events.some((event) => event.type === "card.defended")).toBe(true)
+    expect(result.events.some((event) => event.type === "round.passed")).toBe(true)
+  })
+
+  it("does not auto pass when defended cards are different ranks", () => {
+    const card = (id: string, suit: Card["suit"], rank: Card["rank"]): Card => ({ id, suit, rank })
+
+    const state: GameState = {
+      players: [
+        {
+          id: HUMAN_PLAYER_ID,
+          name: "Human",
+          isBot: false,
+          hand: [card("h1", "spades", "ace"), card("h2", "hearts", "king")],
+        },
+        {
+          id: BOT_PLAYER_ID,
+          name: "Bot",
+          isBot: true,
+          hand: [card("def-final", "spades", "7"), card("def-spare", "hearts", "8")],
+        },
+      ],
+      deck: [
+        card("deck1", "spades", "6"),
+        card("deck2", "spades", "7"),
+        card("deck3", "spades", "8"),
+        card("deck4", "spades", "9"),
+        card("deck5", "spades", "10"),
+        card("deck6", "spades", "jack"),
+        card("deck7", "spades", "queen"),
+        card("deck8", "spades", "king"),
+        card("deck9", "diamonds", "ace"),
+        card("deck10", "hearts", "ace"),
+      ],
+      trump: card("trump", "spades", "ace"),
+      discard: [],
+      table: [
+        {
+          attack: card("a1", "hearts", "6"),
+          defense: card("d1", "hearts", "7"),
+        },
+        {
+          attack: card("a2", "diamonds", "6"),
+          defense: card("d2", "diamonds", "7"),
+        },
+        {
+          attack: card("a3", "clubs", "6"),
+          defense: card("d3", "clubs", "8"),
+        },
+        {
+          attack: card("a4", "clubs", "6"),
+          defense: null,
+        },
+      ],
+      phase: "defend",
+      attackerIndex: 0,
+      defenderIndex: 1,
+      currentPlayerId: BOT_PLAYER_ID,
+      winnerId: null,
+      loserId: null,
+    }
+
+    const result = executeCommandWorkflow(
+      state,
+      { type: "defend", cardId: "def-final", pairIndex: 3 },
+      BOT_PLAYER_ID,
+      container,
+    )
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+
+    expect(result.state.phase).toBe("throw_in")
+    expect(result.state.table).toHaveLength(4)
+    expect(result.state.discard).toHaveLength(0)
+    expect(result.events.some((event) => event.type === "card.defended")).toBe(true)
+    expect(result.events.some((event) => event.type === "round.passed")).toBe(false)
   })
 })
