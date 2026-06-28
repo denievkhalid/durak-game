@@ -61,6 +61,10 @@ export function getOpponentHandSelector(): string {
   return `[data-card-anchor="opponent-hand"]`
 }
 
+export function getTableDropTargetSelector(): string {
+  return `[data-card-anchor="table-drop-target"]`
+}
+
 export function getHandCardSelector(cardId: string): string {
   return `[data-card-anchor="hand-${cardId}"]`
 }

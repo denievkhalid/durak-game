@@ -18,6 +18,7 @@ import {
   getOpponentHandSelector,
   getPlayerHandSelector,
   getTableCardSelector,
+  getTableDropTargetSelector,
   measureElement,
   toRect,
   type Rect,
@@ -172,6 +173,9 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
         }
       } else if (isTableFlightRole(pending.role)) {
         to = measureElement(getTableCardSelector(pending.cardId, pending.role))
+        if (!to) {
+          to = measureElement(getTableDropTargetSelector())
+        }
       }
 
       if (!to) return false
