@@ -25,9 +25,9 @@ export function PlayerHand({
 }: PlayerHandProps) {
   if (!Array.isArray(player.hand)) return null
 
-  const hand = player.hand
-  const overlapClass = getPlayerHandOverlapClass(hand.length)
-  const arcPadding = getHandArcVerticalPadding(hand.length)
+  const visibleHand = player.hand.filter((card) => !hiddenCardIds.has(card.id))
+  const overlapClass = getPlayerHandOverlapClass(visibleHand.length)
+  const arcPadding = getHandArcVerticalPadding(visibleHand.length)
 
   return (
     <div className="flex flex-col items-center overflow-visible">
@@ -40,8 +40,8 @@ export function PlayerHand({
             paddingBottom: `${arcPadding.bottomRem}rem`,
           }}
         >
-          {hand.map((card, index) => {
-            const arc = getHandArcTransform(index, hand.length)
+          {visibleHand.map((card, index) => {
+            const arc = getHandArcTransform(index, visibleHand.length)
 
             return (
               <div
@@ -56,7 +56,6 @@ export function PlayerHand({
                 <CardView
                   card={card}
                   anchor={`hand-${card.id}`}
-                  hidden={hiddenCardIds.has(card.id)}
                   playable={!disabled && playableIds.has(card.id)}
                   onClick={
                     !disabled && playableIds.has(card.id)
