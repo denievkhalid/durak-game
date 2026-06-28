@@ -19,6 +19,8 @@ import {
   getPlayerHandSelector,
   getTableCardSelector,
   getTableDropTargetSelector,
+  getTableSlotAttackSelector,
+  getTableSlotDefenseSelector,
   measureElement,
   toRect,
   type Rect,
@@ -120,79 +122,81 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
 
   const startFlight = useCallback(
     (pending: PendingFlight) => {
-      let to: Rect | null = null
+      let to: Rect | null = pending.target ?? null
       let from = pending.from
 
-      if (isDealFlightRole(pending.role)) {
-        const deckFrom = measureElement(getDeckPileSelector())
-        if (deckFrom) from = deckFrom
+      if (!to) {
+        if (isDealFlightRole(pending.role)) {
+          const deckFrom = measureElement(getDeckPileSelector())
+          if (deckFrom) from = deckFrom
 
-        if (isViewerPlayer(pending.playerId)) {
-          const human = view.players.find((player) => player.id === viewerPlayerId)
-          const handContainer = measureElement(getPlayerHandSelector())
-          to = measureElement(getHandCardSelector(pending.cardId))
-          if (!to && human && Array.isArray(human.hand) && handContainer) {
-            const cardIndex = human.hand.findIndex((card) => card.id === pending.cardId)
-            if (cardIndex >= 0) {
+          if (isViewerPlayer(pending.playerId)) {
+            const human = view.players.find((player) => player.id === viewerPlayerId)
+            const handContainer = measureElement(getPlayerHandSelector())
+            to = measureElement(getHandCardSelector(pending.cardId))
+            if (!to && human && Array.isArray(human.hand) && handContainer) {
+              const cardIndex = human.hand.findIndex((card) => card.id === pending.cardId)
+              if (cardIndex >= 0) {
+                to = estimateHandCardRect(
+                  handContainer,
+                  cardIndex,
+                  human.hand.length,
+                  getPlayerHandOverlapRem(human.hand.length),
+                )
+              }
+            }
+          } else {
+            const handContainer = measureElement(getOpponentHandSelector())
+            if (handContainer) {
+              const targetCount = Math.max(revealedOpponentCards + 1, 1)
               to = estimateHandCardRect(
                 handContainer,
-                cardIndex,
-                human.hand.length,
-                getPlayerHandOverlapRem(human.hand.length),
+                revealedOpponentCards,
+                targetCount,
+                getPlayerHandOverlapRem(targetCount),
               )
             }
           }
-        } else {
-          const handContainer = measureElement(getOpponentHandSelector())
-          if (handContainer) {
-            const targetCount = Math.max(revealedOpponentCards + 1, 1)
-            to = estimateHandCardRect(
-              handContainer,
-              revealedOpponentCards,
-              targetCount,
-              getPlayerHandOverlapRem(targetCount),
-            )
+        } else if (isDiscardFlightRole(pending.role)) {
+          to = measureElement(getDiscardPileSelector())
+        } else if (isTakeFlightRole(pending.role)) {
+          if (isViewerPlayer(pending.playerId)) {
+            const human = view.players.find((player) => player.id === viewerPlayerId)
+            const handContainer = measureElement(getPlayerHandSelector())
+            if (pending.cardId) {
+              to = measureElement(getHandCardSelector(pending.cardId))
+            }
+            if (
+              !to &&
+              human &&
+              Array.isArray(human.hand) &&
+              handContainer &&
+              pending.handSlotIndex !== undefined
+            ) {
+              to = estimateHandCardRect(
+                handContainer,
+                pending.handSlotIndex,
+                human.hand.length,
+                getHandOverlapRem(human.hand.length),
+              )
+            }
+          } else {
+            const handContainer = measureElement(getOpponentHandSelector())
+            if (handContainer && pending.handSlotIndex !== undefined) {
+              const targetCount = pending.handSlotIndex + 1
+              to = estimateHandCardRect(
+                handContainer,
+                pending.handSlotIndex,
+                targetCount,
+                getPlayerHandOverlapRem(targetCount),
+              )
+            }
           }
-        }
-      } else if (isDiscardFlightRole(pending.role)) {
-        to = measureElement(getDiscardPileSelector())
-      } else if (isTakeFlightRole(pending.role)) {
-        if (isViewerPlayer(pending.playerId)) {
-          const human = view.players.find((player) => player.id === viewerPlayerId)
-          const handContainer = measureElement(getPlayerHandSelector())
-          if (pending.cardId) {
-            to = measureElement(getHandCardSelector(pending.cardId))
+        } else if (isTableFlightRole(pending.role)) {
+          to = measureElement(getTableCardSelector(pending.cardId, pending.role))
+          if (!to) {
+            to = measureElement(getTableDropTargetSelector())
           }
-          if (
-            !to &&
-            human &&
-            Array.isArray(human.hand) &&
-            handContainer &&
-            pending.handSlotIndex !== undefined
-          ) {
-            to = estimateHandCardRect(
-              handContainer,
-              pending.handSlotIndex,
-              human.hand.length,
-              getHandOverlapRem(human.hand.length),
-            )
-          }
-        } else {
-          const handContainer = measureElement(getOpponentHandSelector())
-          if (handContainer && pending.handSlotIndex !== undefined) {
-            const targetCount = pending.handSlotIndex + 1
-            to = estimateHandCardRect(
-              handContainer,
-              pending.handSlotIndex,
-              targetCount,
-              getPlayerHandOverlapRem(targetCount),
-            )
-          }
-        }
-      } else if (isTableFlightRole(pending.role)) {
-        to = measureElement(getTableCardSelector(pending.cardId, pending.role))
-        if (!to) {
-          to = measureElement(getTableDropTargetSelector())
         }
       }
 
@@ -534,18 +538,31 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
       const move = view.legalMoves.find((entry) => entry.cardId === cardId)
       if (!move || isAnimating) return
       const handCard = viewerHand.find((card) => card.id === cardId)
+      let target: Rect | null = null
+
+      if (move.command.type === GAME_COMMAND_TYPE.defend) {
+        target = measureElement(getTableSlotDefenseSelector(move.command.pairIndex))
+      } else if (move.command.type === GAME_COMMAND_TYPE.attack) {
+        const targetIndex = Math.min(view.table.length, MAX_TABLE_PAIRS - 1)
+        target = measureElement(getTableSlotAttackSelector(targetIndex))
+      }
+
+      if (!target) {
+        target = measureElement(getTableDropTargetSelector())
+      }
 
       enqueueFlights([
         {
           cardId,
           card: handCard,
           from: toRect(element.getBoundingClientRect()),
+          target: target ?? undefined,
           role,
         },
       ])
       executeCommand(move.command, gameId)
     },
-    [view.legalMoves, isAnimating, executeCommand, enqueueFlights, gameId, viewerHand],
+    [view.legalMoves, view.table.length, isAnimating, executeCommand, enqueueFlights, gameId, viewerHand],
   )
 
   const handleCardClick = useCallback(
@@ -594,15 +611,24 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
         const cardsById = new Map(viewerHand.map((card) => [card.id, card]))
 
         enqueueFlights(
-          cardIds.map((id) => ({
-            cardId: id,
-            card: cardsById.get(id),
-            from:
-              id === cardId
-                ? clickedCardRect
-                : (measureElement(getHandCardSelector(id)) ?? clickedCardRect),
-            role: FLIGHT_ROLE.attack,
-          })),
+          cardIds.map((id, offset) => {
+            const targetIndex = Math.min(view.table.length + offset, MAX_TABLE_PAIRS - 1)
+            const target =
+              measureElement(getTableSlotAttackSelector(targetIndex)) ??
+              measureElement(getTableDropTargetSelector()) ??
+              undefined
+
+            return {
+              cardId: id,
+              card: cardsById.get(id),
+              from:
+                id === cardId
+                  ? clickedCardRect
+                  : (measureElement(getHandCardSelector(id)) ?? clickedCardRect),
+              target,
+              role: FLIGHT_ROLE.attack,
+            }
+          }),
         )
         executeCommand({ type: GAME_COMMAND_TYPE.throwIn, cardIds }, gameId)
         return

@@ -72,3 +72,11 @@ export function getHandCardSelector(cardId: string): string {
 export function getTableCardSelector(cardId: string, role: "attack" | "defense"): string {
   return `[data-card-anchor="table-${role}-${cardId}"]`
 }
+
+export function getTableSlotAttackSelector(index: number): string {
+  return `[data-card-anchor="table-slot-attack-${index}"]`
+}
+
+export function getTableSlotDefenseSelector(index: number): string {
+  return `[data-card-anchor="table-slot-defense-${index}"]`
+}
