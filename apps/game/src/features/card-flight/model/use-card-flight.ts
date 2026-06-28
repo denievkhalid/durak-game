@@ -441,6 +441,7 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
           from: source,
           to,
           faceDown: true,
+          role,
         })
         botFlightSourceRef.current = null
         botFlightCardIdRef.current = null

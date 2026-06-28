@@ -1,5 +1,6 @@
 import { CardView } from "@/entities/card"
-import { isDealFlightRole, isDiscardFlightRole, isTakeFlightRole } from "../lib/constants"
+import { cn } from "@/shared/lib"
+import { FLIGHT_ROLE, isDealFlightRole, isDiscardFlightRole, isTakeFlightRole } from "../lib/constants"
 import { cardLayoutTransition, dealCardTransition } from "@/shared/config/card-motion"
 import { motion } from "framer-motion"
 import type { FlyingCardOverlayProps } from "./types"
@@ -10,6 +11,12 @@ export function FlyingCardOverlay({ flight, onComplete }: FlyingCardOverlayProps
     (isDealFlightRole(flight.role) || isDiscardFlightRole(flight.role) || isTakeFlightRole(flight.role)
       ? dealCardTransition
       : cardLayoutTransition)
+  const tableAngleClass =
+    flight.role === FLIGHT_ROLE.attack
+      ? "-rotate-6"
+      : flight.role === FLIGHT_ROLE.defense
+        ? "rotate-6"
+        : null
 
   return (
     <motion.div
@@ -32,7 +39,10 @@ export function FlyingCardOverlay({ flight, onComplete }: FlyingCardOverlayProps
       <CardView
         card={flight.card}
         faceDown={flight.faceDown ?? false}
-        className="h-full w-full [&>button]:h-full [&>button]:w-full [&>div]:h-full [&>div]:w-full"
+        className={cn(
+          "h-full w-full [&>button]:h-full [&>button]:w-full [&>div]:h-full [&>div]:w-full",
+          tableAngleClass,
+        )}
       />
     </motion.div>
   )
