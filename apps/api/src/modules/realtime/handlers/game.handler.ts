@@ -35,8 +35,31 @@ type GameJoinAckResponse =
   | { ok: false; error: string }
 
 type GameActionAckResponse =
-  | { ok: true }
+  | { ok: true; snapshot: GameJoinSnapshot }
   | { ok: false; error: string }
+
+type GameJoinSnapshotSource = {
+  id: string
+  status: GameStatus
+  participantIds: string[]
+  joinCode: string | null | undefined
+  view: GameViewDTO | null
+}
+
+function toGameJoinSnapshot(snapshot: GameJoinSnapshotSource): GameJoinSnapshot {
+  const mapped: GameJoinSnapshot = {
+    id: snapshot.id,
+    status: snapshot.status,
+    participantIds: snapshot.participantIds,
+    view: snapshot.view,
+  }
+
+  if (snapshot.joinCode !== undefined) {
+    mapped.joinCode = snapshot.joinCode
+  }
+
+  return mapped
+}
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof AppError) {
@@ -80,16 +103,13 @@ export function registerGameHandlers(io: Server, gameService: GameService): void
 
           await bindPlayerSocket(socket, user.id, payload.gameId, gameService)
           const joinResult = await gameService.joinGame(payload.gameId, user.id)
-          const snapshot: GameJoinSnapshot = {
+          const snapshot = toGameJoinSnapshot({
             id: joinResult.id,
             status: joinResult.status,
             participantIds: joinResult.participantIds,
+            joinCode: joinResult.joinCode,
             view: joinResult.view,
-          }
-
-          if (joinResult.joinCode !== undefined) {
-            snapshot.joinCode = joinResult.joinCode
-          }
+          })
 
           ack?.({
             ok: true,
@@ -117,9 +137,19 @@ export function registerGameHandlers(io: Server, gameService: GameService): void
           }
 
           await gameService.executeCommand(payload.gameId, userId, payload.command)
-          await gameService.broadcastGameUpdate(io, payload.gameId)
+          await gameService.broadcastGameUpdate(io, payload.gameId, {
+            excludeUserIds: [userId],
+          })
+          const rawSnapshot = await gameService.getGameSnapshot(payload.gameId, userId)
+          const snapshot = toGameJoinSnapshot({
+            id: rawSnapshot.id,
+            status: rawSnapshot.status,
+            participantIds: rawSnapshot.participantIds,
+            joinCode: rawSnapshot.joinCode,
+            view: rawSnapshot.view,
+          })
 
-          ack?.({ ok: true })
+          ack?.({ ok: true, snapshot })
         } catch (error) {
           ack?.({ ok: false, error: getErrorMessage(error) })
         }
@@ -138,9 +168,19 @@ export function registerGameHandlers(io: Server, gameService: GameService): void
           }
 
           await gameService.surrenderGame(payload.gameId, userId)
-          await gameService.broadcastGameUpdate(io, payload.gameId)
+          await gameService.broadcastGameUpdate(io, payload.gameId, {
+            excludeUserIds: [userId],
+          })
+          const rawSnapshot = await gameService.getGameSnapshot(payload.gameId, userId)
+          const snapshot = toGameJoinSnapshot({
+            id: rawSnapshot.id,
+            status: rawSnapshot.status,
+            participantIds: rawSnapshot.participantIds,
+            joinCode: rawSnapshot.joinCode,
+            view: rawSnapshot.view,
+          })
 
-          ack?.({ ok: true })
+          ack?.({ ok: true, snapshot })
         } catch (error) {
           ack?.({ ok: false, error: getErrorMessage(error) })
         }
@@ -159,9 +199,19 @@ export function registerGameHandlers(io: Server, gameService: GameService): void
           }
 
           await gameService.forfeitTurn(payload.gameId, userId)
-          await gameService.broadcastGameUpdate(io, payload.gameId)
+          await gameService.broadcastGameUpdate(io, payload.gameId, {
+            excludeUserIds: [userId],
+          })
+          const rawSnapshot = await gameService.getGameSnapshot(payload.gameId, userId)
+          const snapshot = toGameJoinSnapshot({
+            id: rawSnapshot.id,
+            status: rawSnapshot.status,
+            participantIds: rawSnapshot.participantIds,
+            joinCode: rawSnapshot.joinCode,
+            view: rawSnapshot.view,
+          })
 
-          ack?.({ ok: true })
+          ack?.({ ok: true, snapshot })
         } catch (error) {
           ack?.({ ok: false, error: getErrorMessage(error) })
         }

@@ -59,3 +59,13 @@ export type GameJoinSocketAck =
       ok: false
       error: string
     }
+
+export type GameActionSocketAck =
+  | {
+      ok: true
+      snapshot: GameSessionSnapshot
+    }
+  | {
+      ok: false
+      error: string
+    }

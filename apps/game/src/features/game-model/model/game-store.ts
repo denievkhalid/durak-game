@@ -55,6 +55,7 @@ type GameStore = {
   view: GameViewDTO | null
   error: string | null
   isAnimating: boolean
+  pendingOnlineView: GameViewDTO | null
   pendingBotMove: PendingBotMove | null
   pendingBotPass: PendingBotPass | null
   pendingBotTake: PendingBotTake | null
@@ -226,6 +227,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   view: null,
   error: null,
   isAnimating: false,
+  pendingOnlineView: null,
   pendingBotMove: null,
   pendingBotPass: null,
   pendingBotTake: null,
@@ -248,7 +250,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
     )
 
     if (!result.ok) {
-      set({ error: result.error.message, isAnimating: false, pendingBotMove: null, pendingBotPass: null, pendingBotTake: null, pendingDeals: null })
+      set({
+        error: result.error.message,
+        isAnimating: false,
+        pendingOnlineView: null,
+        pendingBotMove: null,
+        pendingBotPass: null,
+        pendingBotTake: null,
+        pendingDeals: null,
+      })
       return
     }
 
@@ -259,6 +269,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       state: result.state,
       view: result.view,
       error: null,
+      pendingOnlineView: null,
       pendingBotMove: null,
       pendingDeals,
       isAnimating: !!pendingDeals || botStarts,
@@ -316,14 +327,41 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return
     }
 
+    const shouldAwaitAnimation =
+      getCardIdsFromCommand(command).length > 0 ||
+      command.type === GAME_COMMAND_TYPE.pass ||
+      command.type === GAME_COMMAND_TYPE.take
+
+    if (shouldAwaitAnimation) {
+      set({ isAnimating: true })
+    }
+
     pauseTurnTimerOptimistic()
 
     void import("@/features/game-session/lib/game-commands").then(({ emitGameCommand }) => {
       void emitGameCommand(gameId, command).then((response) => {
         if (!response.ok) {
           applyServerTurnTimer()
-          set({ error: response.error ?? "Не удалось выполнить ход" })
+          set({
+            error: response.error ?? "Не удалось выполнить ход",
+            isAnimating: false,
+            pendingOnlineView: null,
+          })
+          return
         }
+
+        const nextView = response.snapshot.view
+        if (!nextView) {
+          set({ isAnimating: false, pendingOnlineView: null })
+          return
+        }
+
+        if (shouldAwaitAnimation && get().isAnimating) {
+          set({ pendingOnlineView: nextView })
+          return
+        }
+
+        get().applyServerView(nextView)
       })
     })
   },
@@ -373,6 +411,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         view: result.view,
         error: null,
         isAnimating: false,
+        pendingOnlineView: null,
         pendingBotMove: null,
         pendingBotPass: null,
         pendingBotTake: null,
@@ -392,7 +431,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
         if (!response.ok) {
           applyServerTurnTimer()
           set({ error: response.error ?? "Не удалось завершить ход" })
+          return
         }
+
+        const nextView = response.snapshot.view
+        if (!nextView) {
+          return
+        }
+
+        get().applyServerView(nextView)
       })
     })
   },
@@ -420,6 +467,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         view: result.view,
         error: null,
         isAnimating: false,
+        pendingOnlineView: null,
         pendingBotMove: null,
         pendingBotPass: null,
         pendingBotTake: null,
@@ -436,14 +484,27 @@ export const useGameStore = create<GameStore>((set, get) => ({
       void emitGameSurrender(gameId).then((response) => {
         if (!response.ok) {
           set({ error: response.error ?? "Не удалось сдаться" })
+          return
         }
+
+        const nextView = response.snapshot.view
+        if (!nextView) {
+          return
+        }
+
+        get().applyServerView(nextView)
       })
     })
   },
 
   onFlightComplete: () => {
-    const { state, pendingDeals } = get()
+    const { state, pendingDeals, pendingOnlineView } = get()
     if (!state) {
+      if (pendingOnlineView) {
+        get().applyServerView(pendingOnlineView)
+        return
+      }
+
       set({ isAnimating: false })
       return
     }
@@ -473,6 +534,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       view,
       error: null,
       isAnimating: false,
+      pendingOnlineView: null,
       pendingBotMove: null,
       pendingBotPass: null,
       pendingBotTake: null,
@@ -489,6 +551,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       view: null,
       error: null,
       isAnimating: false,
+      pendingOnlineView: null,
       pendingBotMove: null,
       pendingBotPass: null,
       pendingBotTake: null,

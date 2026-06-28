@@ -61,6 +61,10 @@ type RematchResult =
       gameId: string
     }
 
+type BroadcastGameUpdateOptions = {
+  excludeUserIds?: string[]
+}
+
 const REMATCH_TIMEOUT_MS = 30_000
 
 export class GameService {
@@ -461,18 +465,24 @@ export class GameService {
     await this.broadcastGameUpdate(io, gameId)
   }
 
-  async broadcastGameUpdate(io: Server, gameId: string): Promise<void> {
+  async broadcastGameUpdate(
+    io: Server,
+    gameId: string,
+    options: BroadcastGameUpdateOptions = {},
+  ): Promise<void> {
     const game = await this.repository.findById(gameId)
     if (!game?.state) {
       return
     }
 
+    const excludedUserIds = new Set(options.excludeUserIds ?? [])
     const room = this.getRoomName(gameId)
     const sockets = await io.in(room).fetchSockets()
 
     for (const socket of sockets) {
       const viewerId = socket.data.userId
       if (typeof viewerId !== "string") continue
+      if (excludedUserIds.has(viewerId)) continue
 
       socket.emit("game:update", {
         view: await this.buildView(game, viewerId),
