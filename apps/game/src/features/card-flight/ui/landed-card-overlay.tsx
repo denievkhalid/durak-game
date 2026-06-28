@@ -29,7 +29,7 @@ export function LandedCardOverlay({ flight }: LandedCardOverlayProps) {
         card={flight.card}
         faceDown={flight.faceDown ?? false}
         className={cn(
-          "h-full w-full [&>button]:h-full [&>button]:w-full [&>div]:h-full [&>div]:w-full",
+          "h-full w-full transition-none [&>button]:h-full [&>button]:w-full [&>button]:transition-none [&>div]:h-full [&>div]:w-full",
           tableAngleClass,
         )}
       />
