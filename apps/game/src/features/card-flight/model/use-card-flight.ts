@@ -363,9 +363,40 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
       return
     }
 
-    const from = measureElement(getOpponentHandSelector())
-    if (!from) {
+    const opponentHandRect = measureElement(getOpponentHandSelector())
+    if (!opponentHandRect) {
       return
+    }
+
+    const resolveOpponentHandCount = (snapshot: GameViewDTO): number => {
+      const snapshotOpponent = snapshot.players.find((player) => player.id !== viewerPlayerId)
+      if (!snapshotOpponent) {
+        return 0
+      }
+      return "count" in snapshotOpponent.hand
+        ? snapshotOpponent.hand.count
+        : Array.isArray(snapshotOpponent.hand)
+          ? snapshotOpponent.hand.length
+          : 0
+    }
+
+    const previousOpponentHandCount = resolveOpponentHandCount(prevView)
+    const sourceTotal = Math.max(previousOpponentHandCount, 1)
+    const sourceOverlap = getPlayerHandOverlapRem(sourceTotal)
+    let sourceCursor = 0
+    const takeOpponentSourceRect = (): Rect => {
+      if (previousOpponentHandCount <= 0) {
+        return opponentHandRect
+      }
+
+      const sourceIndex = Math.max(previousOpponentHandCount - 1 - sourceCursor, 0)
+      sourceCursor += 1
+      return estimateHandCardRect(
+        opponentHandRect,
+        sourceIndex,
+        sourceTotal,
+        sourceOverlap,
+      )
     }
 
     const previousTableCardIds = new Set<string>()
@@ -382,11 +413,11 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
         incomingFlights.push({
           cardId: pair.attack.id,
           card: pair.attack,
-          from,
+          from: takeOpponentSourceRect(),
           target:
             measureElement(getTableCardSelector(pair.attack.id, FLIGHT_ROLE.attack)) ??
             measureElement(getTableDropTargetSelector()) ??
-            from,
+            opponentHandRect,
           role: FLIGHT_ROLE.attack,
         })
       }
@@ -395,11 +426,11 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
         incomingFlights.push({
           cardId: pair.defense.id,
           card: pair.defense,
-          from,
+          from: takeOpponentSourceRect(),
           target:
             measureElement(getTableCardSelector(pair.defense.id, FLIGHT_ROLE.defense)) ??
             measureElement(getTableDropTargetSelector()) ??
-            from,
+            opponentHandRect,
           role: FLIGHT_ROLE.defense,
         })
       }
@@ -408,7 +439,7 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
     if (incomingFlights.length > 0) {
       enqueueFlights(incomingFlights)
     }
-  }, [socketUpdateVersion, view, activeFlight, enqueueFlights])
+  }, [socketUpdateVersion, view, viewerPlayerId, activeFlight, enqueueFlights])
 
   useEffect(() => {
     if (!landedTableFlights.length) {
