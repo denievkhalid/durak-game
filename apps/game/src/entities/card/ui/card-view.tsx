@@ -15,7 +15,7 @@ type CardViewProps = {
 
 export function CardView({
   card,
-  playable: _playable = false,
+  playable = false,
   selected = false,
   faceDown = false,
   hidden = false,
@@ -47,6 +47,7 @@ export function CardView({
       className={cn(
         "flex h-card w-card flex-col items-center justify-center rounded-lg border-2 border-slate-300 bg-white shadow-md transition",
         SUIT_COLOR_CLASS[card.suit],
+        playable && "ring-2 ring-emerald-400",
         selected && "ring-2 ring-amber-400",
         onClick && "cursor-pointer",
         !onClick && "cursor-default",
