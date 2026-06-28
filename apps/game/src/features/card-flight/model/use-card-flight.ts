@@ -415,7 +415,7 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
     return () => {
       cancelled = true
     }
-  }, [view.table, view.players, opponentVisibleHandCount, activeFlight, startFlight, recoverStuckAnimation])
+  }, [view.table, view.players, queuedHiddenIds, opponentVisibleHandCount, activeFlight, startFlight, recoverStuckAnimation])
 
   useLayoutEffect(() => {
     if (!botFlightSourceRef.current || !botFlightCardIdRef.current) return
