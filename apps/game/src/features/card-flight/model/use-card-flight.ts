@@ -56,6 +56,7 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
   const [takeHandBase, setTakeHandBase] = useState(0)
   const [takeTakerId, setTakeTakerId] = useState<string | null>(null)
   const [landedTakeCards, setLandedTakeCards] = useState(0)
+  const [landedTableFlights, setLandedTableFlights] = useState<CardFlight[]>([])
 
   const pendingFlightRef = useRef<PendingFlight | null>(null)
   const flightQueueRef = useRef<PendingFlight[]>([])
@@ -69,6 +70,7 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
     botFlightCardIdRef.current = null
     setQueuedHiddenIds([])
     setActiveFlight(null)
+    setLandedTableFlights([])
     clearPendingDeals()
     useGameStore.setState({
       pendingBotMove: null,
@@ -85,6 +87,9 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
     for (const deal of pendingDeals) {
       hiddenCardIds.add(deal.card.id)
     }
+  }
+  for (const flight of landedTableFlights) {
+    hiddenCardIds.add(flight.card.id)
   }
 
   const viewer = useMemo(
@@ -280,6 +285,23 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
       return
     }
 
+    if (completedFlight?.role && isTableFlightRole(completedFlight.role)) {
+      setLandedTableFlights((current) => {
+        const hasCard = current.some((flight) => flight.card.id === completedFlight.card.id)
+        if (hasCard) {
+          return current
+        }
+
+        return [
+          ...current,
+          {
+            ...completedFlight,
+            from: completedFlight.to,
+          },
+        ]
+      })
+    }
+
     setQueuedHiddenIds([])
     setIsDealAnimating(false)
     setIsTakeAnimating(false)
@@ -292,6 +314,25 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
 
     onFlightComplete()
   }, [activeFlight, isViewerPlayer, onFlightComplete])
+
+  useEffect(() => {
+    if (!landedTableFlights.length) {
+      return
+    }
+
+    const tableCardIds = new Set<string>()
+    for (const pair of view.table) {
+      tableCardIds.add(pair.attack.id)
+      if (pair.defense) {
+        tableCardIds.add(pair.defense.id)
+      }
+    }
+
+    setLandedTableFlights((current) => {
+      const filtered = current.filter((flight) => !tableCardIds.has(flight.card.id))
+      return filtered.length === current.length ? current : filtered
+    })
+  }, [landedTableFlights.length, view.table])
 
   useLayoutEffect(() => {
     if (!pendingBotPass) return
@@ -626,6 +667,7 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
 
   return {
     activeFlight,
+    landedTableFlights,
     hiddenCardIds,
     isAnimating,
     isDealAnimating,

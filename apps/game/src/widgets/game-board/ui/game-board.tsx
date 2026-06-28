@@ -3,6 +3,7 @@ import type { GameViewDTO } from "@durakjs/engine"
 import { PlayerAvatar } from "@/entities/player"
 import { PlayerHand } from "@/entities/player-hand"
 import { FlyingCardOverlay } from "@/features/card-flight"
+import { LandedCardOverlay } from "@/features/card-flight"
 import { useCardFlight } from "@/features/card-flight/model/use-card-flight"
 import { useGameStore } from "@/features/game-model"
 import { useTurnTimer } from "@/features/turn-timer"
@@ -23,6 +24,7 @@ export function GameBoard({ view, gameId }: GameBoardProps) {
   const surrenderGame = useGameStore((store) => store.surrenderGame)
   const {
     activeFlight,
+    landedTableFlights,
     hiddenCardIds,
     isAnimating,
     opponentVisibleHandCount,
@@ -67,6 +69,9 @@ export function GameBoard({ view, gameId }: GameBoardProps) {
       {activeFlight && (
         <FlyingCardOverlay flight={activeFlight} onComplete={handleFlightComplete} />
       )}
+      {landedTableFlights.map((flight) => (
+        <LandedCardOverlay key={flight.card.id} flight={flight} />
+      ))}
 
       <div className="mx-auto flex h-dvh w-full max-w-5xl flex-col overflow-hidden px-3 py-2 sm:px-4">
         <GameHeader
