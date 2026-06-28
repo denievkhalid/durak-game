@@ -68,6 +68,7 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
 
   const pendingFlightRef = useRef<PendingFlight | null>(null)
   const flightQueueRef = useRef<PendingFlight[]>([])
+  const activeFlightRef = useRef<CardFlight | null>(null)
   const botFlightSourceRef = useRef<Rect | null>(null)
   const botFlightCardIdRef = useRef<string | null>(null)
 
@@ -230,6 +231,22 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
     [view, opponentHandCount, revealedOpponentCards, isViewerPlayer, viewerPlayerId],
   )
 
+  useEffect(() => {
+    activeFlightRef.current = activeFlight
+  }, [activeFlight])
+
+  const tryStartPendingFlight = useCallback(() => {
+    if (activeFlightRef.current || !pendingFlightRef.current) {
+      return
+    }
+
+    const pending = pendingFlightRef.current
+    const started = startFlight(pending)
+    if (started) {
+      pendingFlightRef.current = null
+    }
+  }, [startFlight])
+
   const enqueueFlights = useCallback(
     (
       flights: PendingFlight[],
@@ -264,8 +281,12 @@ export function useCardFlight(view: GameViewDTO, gameId?: string) {
     pendingFlightRef.current = first ?? null
     flightQueueRef.current = rest
     setQueuedHiddenIds(flights.map((flight) => flight.cardId))
+
+    requestAnimationFrame(() => {
+      tryStartPendingFlight()
+    })
   },
-  [opponentHandCount, isViewerPlayer],
+  [opponentHandCount, isViewerPlayer, tryStartPendingFlight],
 )
 
   const handleFlightComplete = useCallback(() => {
